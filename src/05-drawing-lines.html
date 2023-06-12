@@ -39,6 +39,10 @@
       #canvas {
         box-shadow: 0px 2px 5px rgba(0, 0, 0, 0.2);
       }
+
+      .select-wrapper {
+        margin-bottom: 1rem;
+      }
     </style>
   </head>
   <body>
@@ -46,13 +50,26 @@
 
     <div id="container">
       <h1>05 - Drawing lines</h1>
-      <canvas id="canvas"></canvas>
+      <div id="container">
+        <h1>05 - Drawing lines</h1>
+        <div class="select-wrapper">
+          <label for="line-mode">Line Mode:</label>
+          <select name="line-mode" id="line-mode">
+            <option value="LINE_STRIP">
+              gl.LINE_STRIP
+            </option>
+            <option value="LINES">gl.LINES</option>
+            <option value="LINE_LOOP">gl.LINE_LOOP</option>
+          </select>
+        </div>
+        <canvas id="canvas"></canvas>
+      </div>
     </div>
 
     <script>
       const CANVAS_WIDTH = 512;
       const CANVAS_HEIGHT = 512;
-
+      /** @type {HTMLCanvasElement} */
       const canvas = document.getElementById("canvas");
       canvas.width = CANVAS_WIDTH * devicePixelRatio;
       canvas.height = CANVAS_HEIGHT * devicePixelRatio;
@@ -64,17 +81,186 @@
         "height",
         `${CANVAS_HEIGHT}px`
       );
-
+      /** @type {WebGLRenderingContext} */
       const gl =
         canvas.getContext("webgl") ||
         canvas.getContext("experimental-webgl");
 
+      // * check the device Precision
+      const shaderPrecisionLowP =
+        gl.getShaderPrecisionFormat(
+          gl.FRAGMENT_SHADER,
+          gl.LOW_FLOAT
+        );
+
+      const shaderPrecisionMediumP =
+        gl.getShaderPrecisionFormat(
+          gl.FRAGMENT_SHADER,
+          gl.MEDIUM_FLOAT
+        );
+
+      const shaderPrecisionHihgP =
+        gl.getShaderPrecisionFormat(
+          gl.FRAGMENT_SHADER,
+          gl.HIGH_FLOAT
+        );
+
+      const VERTEX_SHAER_SOURCE = `
+        attribute vec4 position;
+        attribute vec4 color;
+        // interpolation
+        varying vec4 v_color;
+
+        void main () {
+          gl_Position = position;
+
+          v_color = color;
+        }
+      `;
+
+      const FRAMENT_SHADER_SOURCE = `
+        precision highp float;
+
+        varying vec4 v_color;
+
+        void main () {
+          gl_FragColor = v_color;
+        }
+      `;
+      // * create and compile vertex & fragment shader to it on GPU
+      const vertexShaer = createShader(
+        gl.VERTEX_SHADER,
+        VERTEX_SHAER_SOURCE
+      );
+
+      const fragmentShader = createShader(
+        gl.FRAGMENT_SHADER,
+        FRAMENT_SHADER_SOURCE
+      );
+
+      // *  create a webGlProgram and link the vertex and fragment shaders to it on the GPU
+      const drawingProgram = createProgram(
+        vertexShaer,
+        fragmentShader
+      );
+
+      // * WebGl Line draw mode
+      let lineDrawMode = "LINE_STRIP";
+
+      // * create an array holding the positions of our point to be rendered
+      const LINE_VERTICES_COUNT = 10;
+      const LINE_DRAWING_WIDTH = 1;
+      const LINE_DRAWING_HEIGHT = 0.5;
+
+      const lineStepX =
+        LINE_DRAWING_WIDTH / LINE_VERTICES_COUNT;
+      let positions = new Float32Array(
+        LINE_VERTICES_COUNT * 2
+      );
+      for (let i = 0; i < LINE_VERTICES_COUNT; i++) {
+        // * kx + t
+        positions[i * 2 + 0] =
+          -LINE_DRAWING_WIDTH / 2 + lineStepX * i; // * position x
+        positions[i * 2 + 1] =
+          i % 2 === 0
+            ? -LINE_DRAWING_HEIGHT / 2
+            : LINE_DRAWING_HEIGHT / 2; // * position y
+      }
+
+      // * create a WebGLBUffer that will hold our position to be supplied to the GPU(Vertex shader)
+      const vertexBuffer = gl.createBuffer();
+
+      // * create an array holidng the colors of our points to be rendered
+      let colors = new Float32Array(
+        LINE_VERTICES_COUNT * 3
+      );
+
+      for (let i = 0; i < LINE_VERTICES_COUNT; i++) {
+        colors[i * 3 + 0] = Math.random();
+        colors[i * 3 + 1] = Math.random();
+        colors[i * 3 + 2] = Math.random();
+      }
+
+      // *  create a WebGlBuffer that will hold our colors to be supplied to the GPU
+      const colorBuffer = gl.createBuffer();
+
+      // * look up "position" attribute variable location on our GPU
+      const positionAttributeLocationOnGPU =
+        gl.getAttribLocation(drawingProgram, "position"); // 0 no init value
+
+      // * look up "color" attribute variable location on our GPU
+      const colorAttributeLocationOnGPU =
+        gl.getAttribLocation(drawingProgram, "color"); // 0 no init value
+
+      // * add user interaction on mouse click
+      canvas.addEventListener("click", onMouseClick);
+
+      function onMouseClick(event) {
+        const globalPageCoordX = event.pageX;
+        const globalPageCoordY = event.pageY;
+
+        const canvasBoundingBox =
+          canvas.getBoundingClientRect();
+
+        const localCanvasCoordX =
+          globalPageCoordX - canvasBoundingBox.left;
+        const localCanvasCoordY =
+          globalPageCoordY - canvasBoundingBox.top;
+        const webglNormalisedCoordX =
+          (localCanvasCoordX / canvasBoundingBox.width) *
+            2 -
+          1;
+
+        // * reverse the y direction
+        const webglNormalisedCoordY =
+          2 -
+          (localCanvasCoordY / canvasBoundingBox.height) *
+            2 -
+          1;
+
+        console.log(
+          webglNormalisedCoordX,
+          webglNormalisedCoordY
+        );
+        positions = new Float32Array([
+          ...positions,
+          webglNormalisedCoordX,
+          webglNormalisedCoordY,
+        ]);
+
+        const randR = Math.random();
+        const randG = Math.random();
+        const randB = Math.random();
+
+        colors = new Float32Array([
+          ...colors,
+          randR,
+          randG,
+          randB,
+        ]);
+
+        sizes = new Float32Array([
+          ...sizes,
+          Math.random() * 15 + 5,
+        ]);
+      }
+      const selectElement =
+        document.getElementById("line-mode");
+
+      selectElement.addEventListener(
+        "change",
+        onLineDrawModeSelect
+      );
+
+      function onLineDrawModeSelect(event) {
+        lineDrawMode = event.target.value;
+      }
+
       requestAnimationFrame(renderFrame);
 
+      // * rendering loop
       function renderFrame() {
         requestAnimationFrame(renderFrame);
-
-        gl.enable(gl.SCISSOR_TEST);
 
         gl.viewport(
           0,
@@ -86,6 +272,117 @@
         gl.clearColor(0.1, 0.1, 0.1, 1);
 
         gl.clear(gl.COLOR_BUFFER_BIT);
+        {
+          // * Bind WebGLBuffer (vertexBuffer) tp special WebGl bind point(gl.ARRAY_BUFFER)
+          gl.bindBuffer(gl.ARRAY_BUFFER, vertexBuffer); // * bind the reference to vertexBuffer
+
+          // * supply position float 32 bit array  to WebGlBuffer( vertexBuffer)
+          gl.bufferData(
+            gl.ARRAY_BUFFER,
+            positions,
+            // * no change , static
+            gl.DYNAMIC_DRAW
+          );
+
+          // * Explicitly enable this variable on GPU
+          gl.enableVertexAttribArray(
+            positionAttributeLocationOnGPU
+          );
+
+          // * instruct the GPU how to unpack our WebGlBuffer to our input attribute variable "position" in the vertex shader
+          gl.vertexAttribPointer(
+            positionAttributeLocationOnGPU,
+            2,
+            gl.FLOAT,
+            false,
+            0,
+            0
+          );
+        }
+
+        {
+          // * Bind WebGLBuffer (colorBuffer) tp special WebGl bind point(gl.ARRAY_BUFFER)
+          gl.bindBuffer(gl.ARRAY_BUFFER, colorBuffer); // * bind the reference to vertexBuffer
+
+          // * supply colors float 32 bit array  to WebGlBuffer( vertexBuffer)
+          gl.bufferData(
+            gl.ARRAY_BUFFER,
+            colors,
+            // * no change , static
+            gl.DYNAMIC_DRAW
+          );
+
+          // * Explicitly enable this variable on GPU
+          gl.enableVertexAttribArray(
+            colorAttributeLocationOnGPU
+          );
+
+          // * instruct the GPU how to unpack our WebGlBuffer to our input attribute variable "color" in the vertex shader
+          gl.vertexAttribPointer(
+            colorAttributeLocationOnGPU,
+            3,
+            gl.FLOAT,
+            false,
+            0,
+            0
+          );
+        }
+
+        // * Explicitly use my webGlProgram that i am interested in drawing with
+        gl.useProgram(drawingProgram);
+
+        // * Issue a draw command using my active WebGlProgram
+        gl.drawArrays(
+          gl[lineDrawMode],
+          0,
+          positions.length / 2
+        );
+      }
+
+      // * WebGl helper Methods
+      function createShader(type, source) {
+        // * return a webgl shader object
+        const shader = gl.createShader(type);
+        gl.shaderSource(shader, source);
+        gl.compileShader(shader);
+        // * check if compile succesfully
+        if (
+          gl.getShaderParameter(shader, gl.COMPILE_STATUS)
+        ) {
+          return shader;
+        }
+
+        console.error(`
+        Error when compiling shader on the GPU:  ${gl.getShaderInfoLog(
+          shader
+        )}`);
+
+        gl.deleteShader(shader);
+      }
+
+      function createProgram(
+        vertexShaderObject,
+        framentShaderObject
+      ) {
+        const program = gl.createProgram();
+        // * ordering matter
+        gl.attachShader(program, vertexShaderObject);
+        gl.attachShader(program, framentShaderObject);
+
+        gl.linkProgram(program);
+        if (
+          gl.getProgramParameter(program, gl.LINK_STATUS)
+        ) {
+          return program;
+        }
+
+        console.error(`
+        Error when compiling shader on the GPU:  ${gl.getProgramInfoLog(
+          program
+        )}
+        `);
+
+        gl.deleteProgram(program);
       }
     </script>
   </body>

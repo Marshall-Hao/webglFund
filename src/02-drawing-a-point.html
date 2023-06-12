@@ -50,9 +50,24 @@
     </div>
 
     <script>
+      const VERTEX_SHAER_SOURCE = `
+        attribute vec4 position;
+
+        void main () {
+          gl_Position = position;
+          gl_PointSize = 20.0;
+        }
+      `;
+
+      const FRAMENT_SHADER_SOURCE = `
+        void main () {
+          gl_FragColor = vec4(1.0, 0.0, 0.0, 1.0);
+        }
+      `;
+
       const CANVAS_WIDTH = 512;
       const CANVAS_HEIGHT = 512;
-
+      /** @type {HTMLCanvasElement} */
       const canvas = document.getElementById("canvas");
       canvas.width = CANVAS_WIDTH * devicePixelRatio;
       canvas.height = CANVAS_HEIGHT * devicePixelRatio;
@@ -64,17 +79,43 @@
         "height",
         `${CANVAS_HEIGHT}px`
       );
-
+      /** @type {WebGLRenderingContext} */
       const gl =
         canvas.getContext("webgl") ||
         canvas.getContext("experimental-webgl");
 
+      // * create and compile vertex & fragment shader to it on GPU
+      const vertexShaer = createShader(
+        gl.VERTEX_SHADER,
+        VERTEX_SHAER_SOURCE
+      );
+
+      const fragmentShader = createShader(
+        gl.FRAGMENT_SHADER,
+        FRAMENT_SHADER_SOURCE
+      );
+
+      // *  create a webGlProgram and link the vertex and fragment shaders to it on the GPU
+      const drawingProgram = createProgram(
+        vertexShaer,
+        fragmentShader
+      );
+
+      // * create an array holding the positions of our point to be rendered
+      const positions = new Float32Array([0, 0, 0.5, 0.5]);
+
+      // * create a WebGLBUffer that will hold our position to be supplied to the GPU(Vertex shader)
+      const vertexBuffer = gl.createBuffer();
+
+      // * look up "position" attribute variable location on our GPU
+      const positionAttributeLocationOnGPU =
+        gl.getAttribLocation(drawingProgram, "position"); // 0 no init value
+
       requestAnimationFrame(renderFrame);
 
+      // * rendering loop
       function renderFrame() {
         requestAnimationFrame(renderFrame);
-
-        gl.enable(gl.SCISSOR_TEST);
 
         gl.viewport(
           0,
@@ -86,6 +127,84 @@
         gl.clearColor(0.1, 0.1, 0.1, 1);
 
         gl.clear(gl.COLOR_BUFFER_BIT);
+
+        // * Bind WebGLBuffer (vertexBuffer) tp special WebGl bind point(gl.ARRAY_BUFFER)
+        gl.bindBuffer(gl.ARRAY_BUFFER, vertexBuffer); // * bind the reference to vertexBuffer
+
+        // * supply position float 32 bit array  to WebGlBuffer( vertexBuffer)
+        gl.bufferData(
+          gl.ARRAY_BUFFER,
+          positions,
+          // * no change , static
+          gl.STATIC_DRAW
+        );
+
+        // * Explicitly enable this variable on GPU
+        gl.enableVertexAttribArray(
+          positionAttributeLocationOnGPU
+        );
+
+        // * instruct the GPU how to unpack our WebGlBuffer to our input attribute variable "position" in the vertex shader
+        gl.vertexAttribPointer(
+          positionAttributeLocationOnGPU,
+          2,
+          gl.FLOAT,
+          false,
+          0,
+          0
+        );
+
+        // * Explicitly use my webGlProgram that i am interested in drawing with
+        gl.useProgram(drawingProgram);
+
+        // * Issue a draw command using my active WebGlProgram
+        gl.drawArrays(gl.POINTS, 0, 2);
+      }
+
+      // * WebGl helper Methods
+      function createShader(type, source) {
+        // * return a webgl shader object
+        const shader = gl.createShader(type);
+        gl.shaderSource(shader, source);
+        gl.compileShader(shader);
+        // * check if compile succesfully
+        if (
+          gl.getShaderParameter(shader, gl.COMPILE_STATUS)
+        ) {
+          return shader;
+        }
+
+        console.error(`
+        Error when compiling shader on the GPU:  ${gl.getShaderInfoLog(
+          shader
+        )}`);
+
+        gl.deleteShader(shader);
+      }
+
+      function createProgram(
+        vertexShaderObject,
+        framentShaderObject
+      ) {
+        const program = gl.createProgram();
+        // * ordering matter
+        gl.attachShader(program, vertexShaderObject);
+        gl.attachShader(program, framentShaderObject);
+
+        gl.linkProgram(program);
+        if (
+          gl.getProgramParameter(program, gl.LINK_STATUS)
+        ) {
+          return program;
+        }
+
+        console.error(`
+        Error when compiling shader on the GPU:  ${gl.getProgramInfoLog(
+          program
+        )}
+        `);
+
+        gl.deleteProgram(program);
       }
     </script>
   </body>
