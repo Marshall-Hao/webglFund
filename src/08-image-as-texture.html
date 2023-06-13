@@ -39,6 +39,10 @@
       #canvas {
         box-shadow: 0px 2px 5px rgba(0, 0, 0, 0.2);
       }
+
+      #texture-controls {
+        margin-bottom: 1rem;
+      }
     </style>
   </head>
   <body>
@@ -46,12 +50,103 @@
 
     <div id="container">
       <h1>08 - Image as a texture</h1>
+      <div id="texture-controls">
+        <div>
+          <label for="texture-scale">Texture Scale:</label>
+          <input
+            name="texture-scale"
+            id="texture-scale"
+            type="range"
+            min="0.1"
+            max="10"
+            value="0"
+            step="0.1"
+          />
+        </div>
+        <div>
+          <label for="texture-wrap-s-mode"
+            >Texture Wrap S:</label
+          >
+          <select
+            name="texture-wrap-s-mode"
+            id="texture-wrap-s-mode"
+          >
+            <option value="REPEAT">gl.REPEAT</option>
+            <option value="CLAMP_TO_EDGE">
+              gl.CLAMP_TO_EDGE
+            </option>
+            <option value="MIRRORED_REPEAT">
+              gl.MIRRORED_REPEAT
+            </option>
+          </select>
+        </div>
+        <div>
+          <label for="texture-wrap-t-mode"
+            >Texture Wrap T:</label
+          >
+          <select
+            name="texture-wrap-t-mode"
+            id="texture-wrap-t-mode"
+          >
+            <option value="REPEAT">gl.REPEAT</option>
+            <option value="CLAMP_TO_EDGE">
+              gl.CLAMP_TO_EDGE
+            </option>
+            <option value="MIRRORED_REPEAT">
+              gl.MIRRORED_REPEAT
+            </option>
+          </select>
+        </div>
+        <div>
+          <label for="texture-min-filter-mode"
+            >Texture Min Filter:</label
+          >
+          <select
+            name="texture-min-filter-mode"
+            id="texture-min-filter-mode"
+          >
+            <option value="LINEAR">gl.LINEAR</option>
+            <option value="NEAREST">gl.NEAREST</option>
+            <option value="NEAREST_MIPMAP_NEAREST">
+              gl.NEAREST_MIPMAP_NEAREST
+            </option>
+            <option value="LINEAR_MIPMAP_NEAREST">
+              gl.LINEAR_MIPMAP_NEAREST
+            </option>
+            <option value="NEAREST_MIPMAP_LINEAR">
+              gl.NEAREST_MIPMAP_LINEAR
+            </option>
+            <option value="LINEAR_MIPMAP_LINEAR">
+              gl.LINEAR_MIPMAP_LINEAR
+            </option>
+          </select>
+        </div>
+        <div>
+          <label for="texture-min-filter-mode"
+            >Texture Mag Filter:</label
+          >
+          <select
+            name="texture-mag-filter-mode"
+            id="texture-mag-filter-mode"
+          >
+            <option value="LINEAR">gl.LINEAR</option>
+            <option value="NEAREST">gl.NEAREST</option>
+          </select>
+        </div>
+      </div>
       <canvas id="canvas"></canvas>
     </div>
 
     <script>
       const CANVAS_WIDTH = 512;
       const CANVAS_HEIGHT = 512;
+
+      let textureWrapSMode = "REPEAT";
+      let textureWrapTMode = "REPEAT";
+      let textureMagFilter = "LINEAR";
+      let textureMinFilter = "LINEAR_MIPMAP_LINEAR";
+      let textureScaleFactor = 1;
+
       /** @type {HTMLCanvasElement} */
       const canvas = document.getElementById("canvas");
       canvas.width = CANVAS_WIDTH * devicePixelRatio;
@@ -104,11 +199,17 @@
         precision highp float;
         
         uniform sampler2D myTexture;
+        uniform float textureScaleFactor;
 
         varying vec2 v_uv;
 
         void main () {
-          vec4 textureColor = texture2D(myTexture,v_uv);
+          vec2 argumentedUVs = v_uv;
+          // argumentedUVs.x += sin(argumentedUVs.y * 5.0) * 0.5;
+          // float distanceFromCenter = distance(argumentedUVs, vec2(0.5,0.5));
+          // argumentedUVs *= distanceFromCenter;
+          argumentedUVs *= textureScaleFactor;
+          vec4 textureColor = texture2D(myTexture,argumentedUVs);
           gl_FragColor = textureColor;
         }
       `;
@@ -204,62 +305,74 @@
 
       const image = new Image();
 
+      // * use power of 2 texture
       image.src = "./assets/water-texture.png";
 
       image.onload = onImageLoaded;
 
-      // * get uniform value
-      gl.useProgram(drawingProgram);
-      const textureUniformLocationOnGPU =
-        gl.getUniformLocation(drawingProgram, "myTexture");
+      // Get references to <select /> widgets and listen to change events
+      const wrapSModeSelect = document.getElementById(
+        "texture-wrap-s-mode"
+      );
+      const wrapTModeSelect = document.getElementById(
+        "texture-wrap-t-mode"
+      );
+      const minFilterModeSelect = document.getElementById(
+        "texture-min-filter-mode"
+      );
+      const magFilterModeSelect = document.getElementById(
+        "texture-mag-filter-mode"
+      );
 
-      // * passing a integeter to the uniform
-      // * location on the GPU, active texture slot index
-      // * 这个uniform location的值是 texture slot 0的值 那个图片
-      // c++ 中指针的概念 地址表示那个值
-      gl.uniform1i(textureUniformLocationOnGPU, 0);
+      // Get a refernce to our <input type="range" /> widget and listen to change events
+      const textureScaleInput =
+        document.getElementById("texture-scale");
+
+      textureScaleInput.addEventListener(
+        "change",
+        onTextureScaleInput
+      );
+
+      // Assign change event listeners to our <select /> elements
+      wrapSModeSelect.addEventListener(
+        "change",
+        onWrapSModeSelect
+      );
+      wrapTModeSelect.addEventListener(
+        "change",
+        onWrapTModeSelect
+      );
+      minFilterModeSelect.addEventListener(
+        "change",
+        onMinFilterModeSelect
+      );
+
+      function onTextureScaleInput(event) {
+        textureScaleFactor = parseFloat(event.target.value);
+      }
+
+      function onWrapSModeSelect(event) {
+        textureWrapSMode = event.target.value;
+      }
+
+      function onWrapTModeSelect(event) {
+        textureWrapTMode = event.target.value;
+      }
+
+      function onMinFilterModeSelect(event) {
+        textureMinFilter = event.target.value;
+      }
+
+      function onMagFilterModeSelect(event) {
+        textureMagFilter = event.target.value;
+      }
 
       function onImageLoaded() {
         // Bind our texture to the global WebGl gl.TEXTURE_2D binding point
         gl.bindTexture(gl.TEXTURE_2D, texture); // * references 地址
 
-        // * flip y-axis
-        gl.pixelStorei(gl.UNPACK_FLIP_Y_WEBGL, 1);
-        // * set the x wrapping mode for our active gl.TEXTURE_2D (texture)
-        gl.texParameteri(
-          gl.TEXTURE_2D,
-          gl.TEXTURE_WRAP_S,
-          gl.REPEAT
-        );
-
-        // * set the y wrapping mode for our active gl.TEXTURE_2D (texture)
-        gl.texParameteri(
-          gl.TEXTURE_2D,
-          gl.TEXTURE_WRAP_T,
-          gl.REPEAT
-        );
-        // * set the mag filter for our active gl.TEXTURE_2D
-        gl.texParameteri(
-          gl.TEXTURE_2D,
-          gl.TEXTURE_MAG_FILTER,
-          gl.LINEAR
-        );
-        // * set the min filter for our active gl.TEXTURE_2D
-        gl.texParameteri(
-          gl.TEXTURE_2D,
-          gl.TEXTURE_MIN_FILTER,
-          gl.LINEAR
-        );
-
-        // * supply the image to the newly created WebGLTEXTURE (texture)
-        gl.texImage2D(
-          gl.TEXTURE_2D,
-          0,
-          gl.RGB,
-          gl.RGB,
-          gl.UNSIGNED_BYTE,
-          image
-        );
+        // * generate mipmap level for out textures , only do it once // for mip map
+        gl.generateMipmap(gl.TEXTURE_2D);
 
         gl.bindTexture(gl.TEXTURE_2D, null);
       }
@@ -358,11 +471,70 @@
         // * Explicitly use my webGlProgram that i am interested in drawing with
         gl.useProgram(drawingProgram);
 
+        // * look up uniform variable location in our WebGLProgram
+        const textureUniformLocationOnGPU =
+          gl.getUniformLocation(
+            drawingProgram,
+            "myTexture"
+          );
+        // Pass in texture unit to use as a uniform variable to our fragment shader
+        // * passing a integeter to the uniform
+        // * location on the GPU, active texture slot index
+        // * 这个uniform location的值是 texture slot 0的值 那个图片
+        // c++ 中指针的概念 地址表示那个值
+        gl.uniform1i(textureUniformLocationOnGPU, 0);
+
+        // * look up uniform variable location for texture sacele factor inour WebGlProgram
+        const textureScaleFactorLocationOnGPU =
+          gl.getUniformLocation(
+            drawingProgram,
+            "textureScaleFactor"
+          );
+        // 传入一个float 3.0
+        gl.uniform1f(
+          textureScaleFactorLocationOnGPU,
+          textureScaleFactor
+        );
         // * Active texture unit at index 0
         gl.activeTexture(gl.TEXTURE0);
         // * Bind  texture to active gl.TEXTURE_2D
         gl.bindTexture(gl.TEXTURE_2D, texture); // * active  gl.TEXTURE0
 
+        // * flip y-axis
+        gl.pixelStorei(gl.UNPACK_FLIP_Y_WEBGL, 1);
+        // Set the x wrapping mode for our active gl.TEXTURE_2D (texture)
+        gl.texParameteri(
+          gl.TEXTURE_2D,
+          gl.TEXTURE_WRAP_S,
+          gl[textureWrapSMode]
+        );
+        // Set the y wrapping mode for our active gl.TEXTURE_2D (texture)
+        gl.texParameteri(
+          gl.TEXTURE_2D,
+          gl.TEXTURE_WRAP_T,
+          gl[textureWrapTMode]
+        );
+        // Set the min filter for our active gl.TEXTURE_2D
+        gl.texParameteri(
+          gl.TEXTURE_2D,
+          gl.TEXTURE_MIN_FILTER,
+          gl[textureMinFilter]
+        );
+        // Set the mag filter for our active gl.TEXTURE_2D
+        gl.texParameteri(
+          gl.TEXTURE_2D,
+          gl.TEXTURE_MAG_FILTER,
+          gl[textureMagFilter]
+        );
+        // * supply the image to the newly created WebGLTEXTURE (texture)
+        gl.texImage2D(
+          gl.TEXTURE_2D,
+          0,
+          gl.RGB,
+          gl.RGB,
+          gl.UNSIGNED_BYTE,
+          image
+        );
         // * Issue a draw command using my active WebGlProgram
         gl.drawElements(
           gl.TRIANGLES,
