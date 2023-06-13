@@ -90,23 +90,26 @@
 
       const VERTEX_SHAER_SOURCE = `
         attribute vec4 position;
-        attribute vec4 color;
+        attribute vec2 uv;
 
-        varying vec4 v_color;
+        varying vec2 v_uv;
 
         void main () {
           gl_Position = position;
-          v_color = color;
+          v_uv = uv;
         }
       `;
 
       const FRAMENT_SHADER_SOURCE = `
         precision highp float;
+        
+        uniform sampler2D myTexture;
 
-        varying vec4 v_color;
+        varying vec2 v_uv;
 
         void main () {
-          gl_FragColor = v_color;
+          vec4 textureColor = texture2D(myTexture,v_uv);
+          gl_FragColor = textureColor;
         }
       `;
       // * create and compile vertex & fragment shader to it on GPU
@@ -160,20 +163,20 @@
       // * create a WebGLBUffer that will hold our position to be supplied to the GPU(Vertex shader)
       const vertexBuffer = gl.createBuffer();
 
-      // * create an array holidng the colors of our points to be rendered
-      let colors = new Float32Array([
-        // * smooth the color
-        // * first triangle
-        // 1.0, 0.0, 0.0, 0, 1, 0, 0, 0.5, 0.5,
-        // * second triangle
-        // 1, 0, 0, 0, 0.5, 0.5, 0, 0, 1,
-
-        // * optimization GPU calculation
-        1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0.5, 0.5,
+      // * create an array holidng the uvs as float with 32bit precision
+      const uvs = new Float32Array([
+        0,
+        0, // v0
+        1,
+        0, // v1
+        1,
+        1, // v2
+        0,
+        1, // v3
       ]);
 
-      // *  create a WebGlBuffer that will hold our colors to be supplied to the GPU
-      const colorBuffer = gl.createBuffer();
+      // *  create a uvBuffer that will hold our UVs to be supplied to the GPU
+      const uvBuffer = gl.createBuffer();
 
       // create an array holding the indices that describe vertex connectivity
       const indices = new Uint16Array([
@@ -190,14 +193,76 @@
       const positionAttributeLocationOnGPU =
         gl.getAttribLocation(drawingProgram, "position"); // 0 no init value
 
-      // * look up "color" attribute variable location on our GPU
-      const colorAttributeLocationOnGPU =
-        gl.getAttribLocation(drawingProgram, "color"); // 0 no init value
+      // * look up "uv" attribute variable location on our GPU
+      const uvAttributeLocationOnGPU = gl.getAttribLocation(
+        drawingProgram,
+        "uv"
+      ); // 0 no init value
 
       // * create a webgl Texture
       const texture = gl.createTexture();
 
-      const imae = new Image();
+      const image = new Image();
+
+      image.src = "./assets/water-texture.png";
+
+      image.onload = onImageLoaded;
+
+      // * get uniform value
+      gl.useProgram(drawingProgram);
+      const textureUniformLocationOnGPU =
+        gl.getUniformLocation(drawingProgram, "myTexture");
+
+      // * passing a integeter to the uniform
+      // * location on the GPU, active texture slot index
+      // * 这个uniform location的值是 texture slot 0的值 那个图片
+      // c++ 中指针的概念 地址表示那个值
+      gl.uniform1i(textureUniformLocationOnGPU, 0);
+
+      function onImageLoaded() {
+        // Bind our texture to the global WebGl gl.TEXTURE_2D binding point
+        gl.bindTexture(gl.TEXTURE_2D, texture); // * references 地址
+
+        // * flip y-axis
+        gl.pixelStorei(gl.UNPACK_FLIP_Y_WEBGL, 1);
+        // * set the x wrapping mode for our active gl.TEXTURE_2D (texture)
+        gl.texParameteri(
+          gl.TEXTURE_2D,
+          gl.TEXTURE_WRAP_S,
+          gl.REPEAT
+        );
+
+        // * set the y wrapping mode for our active gl.TEXTURE_2D (texture)
+        gl.texParameteri(
+          gl.TEXTURE_2D,
+          gl.TEXTURE_WRAP_T,
+          gl.REPEAT
+        );
+        // * set the mag filter for our active gl.TEXTURE_2D
+        gl.texParameteri(
+          gl.TEXTURE_2D,
+          gl.TEXTURE_MAG_FILTER,
+          gl.LINEAR
+        );
+        // * set the min filter for our active gl.TEXTURE_2D
+        gl.texParameteri(
+          gl.TEXTURE_2D,
+          gl.TEXTURE_MIN_FILTER,
+          gl.LINEAR
+        );
+
+        // * supply the image to the newly created WebGLTEXTURE (texture)
+        gl.texImage2D(
+          gl.TEXTURE_2D,
+          0,
+          gl.RGB,
+          gl.RGB,
+          gl.UNSIGNED_BYTE,
+          image
+        );
+
+        gl.bindTexture(gl.TEXTURE_2D, null);
+      }
 
       requestAnimationFrame(renderFrame);
 
@@ -244,26 +309,26 @@
         }
 
         {
-          // * Bind WebGLBuffer (colorBuffer) tp special WebGl bind point(gl.ARRAY_BUFFER)
-          gl.bindBuffer(gl.ARRAY_BUFFER, colorBuffer); // * bind the reference to vertexBuffer
+          // * Bind WebGLBuffer (uvBuffer) tp special WebGl bind point(gl.ARRAY_BUFFER)
+          gl.bindBuffer(gl.ARRAY_BUFFER, uvBuffer); // * bind the reference to vertexBuffer
 
-          // * supply colors float 32 bit array  to WebGlBuffer( vertexBuffer)
+          // * supply UVs float 32 bit array  to WebGlBuffer( vertexBuffer)
           gl.bufferData(
             gl.ARRAY_BUFFER,
-            colors,
+            uvs,
             // * no change , static
             gl.STATIC_DRAW
           );
 
           // * Explicitly enable this variable on GPU
           gl.enableVertexAttribArray(
-            colorAttributeLocationOnGPU
+            uvAttributeLocationOnGPU
           );
 
-          // * instruct the GPU how to unpack our WebGlBuffer to our input attribute variable "color" in the vertex shader
+          // * instruct the GPU how to unpack our WebGlBuffer to our input attribute variable "uv" in the vertex shader
           gl.vertexAttribPointer(
-            colorAttributeLocationOnGPU,
-            3,
+            uvAttributeLocationOnGPU,
+            2,
             gl.FLOAT,
             false,
             0,
@@ -292,6 +357,11 @@
         }
         // * Explicitly use my webGlProgram that i am interested in drawing with
         gl.useProgram(drawingProgram);
+
+        // * Active texture unit at index 0
+        gl.activeTexture(gl.TEXTURE0);
+        // * Bind  texture to active gl.TEXTURE_2D
+        gl.bindTexture(gl.TEXTURE_2D, texture); // * active  gl.TEXTURE0
 
         // * Issue a draw command using my active WebGlProgram
         gl.drawElements(
