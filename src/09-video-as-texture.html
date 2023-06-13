@@ -46,6 +46,55 @@
 
     <div id="container">
       <h1>09 - Video as a texture</h1>
+      <div id="texture-controls">
+        <div>
+          <label for="texture-scale">Texture Scale:</label>
+          <input
+            name="texture-scale"
+            id="texture-scale"
+            type="range"
+            min="0.1"
+            max="10"
+            value="0"
+            step="0.1"
+          />
+        </div>
+        <div>
+          <label for="texture-min-filter-mode"
+            >Texture Min Filter:</label
+          >
+          <select
+            name="texture-min-filter-mode"
+            id="texture-min-filter-mode"
+          >
+            <option value="LINEAR">gl.LINEAR</option>
+            <option value="NEAREST">gl.NEAREST</option>
+          </select>
+        </div>
+        <div>
+          <label for="texture-min-filter-mode"
+            >Texture Mag Filter:</label
+          >
+          <select
+            name="texture-mag-filter-mode"
+            id="texture-mag-filter-mode"
+          >
+            <option value="LINEAR">gl.LINEAR</option>
+            <option value="NEAREST">gl.NEAREST</option>
+          </select>
+        </div>
+        <div>
+          <label for="texture-background-size-mode"
+            >Should use background-size: cover:</label
+          >
+          <input
+            name="texture-background-size-mode"
+            id="texture-background-size-mode"
+            type="checkbox"
+            checked
+          />
+        </div>
+      </div>
       <canvas id="canvas"></canvas>
     </div>
 
@@ -53,6 +102,14 @@
       const CANVAS_WIDTH = 512;
       const CANVAS_HEIGHT = 512;
 
+      let textureWrapSMode = "CLAMP_TO_EDGE";
+      let textureWrapTMode = "CLAMP_TO_EDGE";
+      let textureMagFilter = "LINEAR";
+      let textureMinFilter = "LINEAR";
+      let textureScaleFactor = 1;
+      let backgroundSizeModeCover = true;
+
+      /** @type {HTMLCanvasElement} */
       const canvas = document.getElementById("canvas");
       canvas.width = CANVAS_WIDTH * devicePixelRatio;
       canvas.height = CANVAS_HEIGHT * devicePixelRatio;
@@ -64,13 +121,254 @@
         "height",
         `${CANVAS_HEIGHT}px`
       );
-
+      /** @type {WebGLRenderingContext} */
       const gl =
         canvas.getContext("webgl") ||
         canvas.getContext("experimental-webgl");
 
+      // * check the device Precision
+      const shaderPrecisionLowP =
+        gl.getShaderPrecisionFormat(
+          gl.FRAGMENT_SHADER,
+          gl.LOW_FLOAT
+        );
+
+      const shaderPrecisionMediumP =
+        gl.getShaderPrecisionFormat(
+          gl.FRAGMENT_SHADER,
+          gl.MEDIUM_FLOAT
+        );
+
+      const shaderPrecisionHihgP =
+        gl.getShaderPrecisionFormat(
+          gl.FRAGMENT_SHADER,
+          gl.HIGH_FLOAT
+        );
+
+      const VERTEX_SHAER_SOURCE = `
+        attribute vec4 position;
+        attribute vec2 uv;
+
+        varying vec2 v_uv;
+
+        void main () {
+          gl_Position = position;
+          v_uv = uv;
+        }
+      `;
+
+      const FRAMENT_SHADER_SOURCE = `
+        precision highp float;
+        
+        uniform sampler2D myTexture;
+        uniform float textureScaleFactor;
+        uniform vec2 canvasSize;
+        uniform vec2 videoSize;
+        uniform int backgroundSizeMode;
+
+        varying vec2 v_uv;
+
+        void main () {
+          vec2 s = canvasSize; // Canvas dimentions
+          vec2 i = videoSize; // Video dimensions
+          float rs = s.x / s.y;
+          float ri = i.x / i.y;
+          vec2 new = rs < ri ? vec2(i.x * s.y / i.y, s.y) : vec2(s.x, i.y * s.x / i.x);
+          vec2 offset = (rs < ri ? vec2((new.x - s.x) / 2.0, 0.0) : vec2(0.0, (new.y - s.y) / 2.0)) / new;
+          vec2 uv = backgroundSizeMode == 0 ? v_uv : (v_uv * s / new + offset);
+        
+          vec2 scaledUVs = uv * textureScaleFactor;
+          vec4 textureColor = texture2D(myTexture,scaledUVs);
+          gl_FragColor = textureColor;
+        }
+      `;
+      // * create and compile vertex & fragment shader to it on GPU
+      const vertexShaer = createShader(
+        gl.VERTEX_SHADER,
+        VERTEX_SHAER_SOURCE
+      );
+
+      const fragmentShader = createShader(
+        gl.FRAGMENT_SHADER,
+        FRAMENT_SHADER_SOURCE
+      );
+
+      // *  create a webGlProgram and link the vertex and fragment shaders to it on the GPU
+      const drawingProgram = createProgram(
+        vertexShaer,
+        fragmentShader
+      );
+
+      // * create an array holding the positions of our point to be rendered
+      const QUAD_WIDTH = 2;
+      const QUAD_HEIGHT = 2;
+
+      let positions = new Float32Array([
+        // * first triangle
+        // -QUAD_WIDTH / 2,
+        // QUAD_HEIGHT / 2,
+        // -QUAD_WIDTH / 2,
+        // -QUAD_HEIGHT / 2,
+        // QUAD_WIDTH / 2,
+        // -QUAD_HEIGHT / 2,
+        // * second triangle
+        // -QUAD_WIDTH / 2,
+        // QUAD_HEIGHT / 2,
+        // QUAD_WIDTH / 2,
+        // -QUAD_HEIGHT / 2,
+        // QUAD_WIDTH / 2,
+        // QUAD_HEIGHT / 2,
+
+        // * optimization way , 4 points only
+        -QUAD_WIDTH / 2,
+        -QUAD_HEIGHT / 2,
+        QUAD_WIDTH / 2,
+        -QUAD_HEIGHT / 2,
+        QUAD_WIDTH / 2,
+        QUAD_HEIGHT / 2,
+        -QUAD_WIDTH / 2,
+        QUAD_HEIGHT / 2,
+      ]);
+
+      // * create a WebGLBUffer that will hold our position to be supplied to the GPU(Vertex shader)
+      const vertexBuffer = gl.createBuffer();
+
+      // * create an array holidng the uvs as float with 32bit precision
+      const uvs = new Float32Array([
+        0,
+        0, // v0
+        1,
+        0, // v1
+        1,
+        1, // v2
+        0,
+        1, // v3
+      ]);
+
+      // *  create a uvBuffer that will hold our UVs to be supplied to the GPU
+      const uvBuffer = gl.createBuffer();
+
+      // create an array holding the indices that describe vertex connectivity
+      const indices = new Uint16Array([
+        // * first triangle indices can draw easy to see
+        1, 2, 0,
+        // * second triangle indices can draw easy to see
+        0, 2, 3,
+      ]);
+
+      //  Create a special webGLBuffer that will hold the indices (共享顶点) describing our 2 triangles
+      const indexBuffer = gl.createBuffer();
+
+      // * look up "position" attribute variable location on our GPU
+      const positionAttributeLocationOnGPU =
+        gl.getAttribLocation(drawingProgram, "position"); // 0 no init value
+
+      // * look up "uv" attribute variable location on our GPU
+      const uvAttributeLocationOnGPU = gl.getAttribLocation(
+        drawingProgram,
+        "uv"
+      ); // 0 no init value
+
+      // * for better optimization, since no need for webgl to find the memeory location for this uniform variables for every frame
+      // * just the begining is good enough
+      gl.useProgram(drawingProgram);
+      // * look up uniform variable location in our WebGLProgram
+      const textureUniformLocationOnGPU =
+        gl.getUniformLocation(drawingProgram, "myTexture");
+      // * look up uniform variable location for texture sacele factor inour WebGlProgram
+      const textureScaleFactorLocationOnGPU =
+        gl.getUniformLocation(
+          drawingProgram,
+          "textureScaleFactor"
+        );
+      // * look up screenSize variable location in our webglProgram
+      const canvasSizeLocationGpu = gl.getUniformLocation(
+        drawingProgram,
+        "canvasSize"
+      );
+
+      // * look up videoSize variable location in our webglProgram
+      const videoSizeLocationGpu = gl.getUniformLocation(
+        drawingProgram,
+        "videoSize"
+      );
+      const backgroundSizeModeLocationOnGPU =
+        gl.getUniformLocation(
+          drawingProgram,
+          "backgroundSizeMode"
+        );
+
+      // * create a webgl Texture
+      const texture = gl.createTexture();
+
+      const video = document.createElement("video");
+      video.src =
+        "./assets/big-buck-bunny-sample-video.mp4";
+      // * both js and html attributes need to be set up
+      video.loop = true;
+      video.muted = true;
+      video.autoplay = true;
+      video.playsInline = true;
+
+      video.setAttribute("loop", true);
+      video.setAttribute("muted", true);
+      video.setAttribute("autoplay", true);
+      video.setAttribute("playsInline", true);
+      // * use power of 2 texture
+      video.play();
+
+      const minFilterModeSelect = document.getElementById(
+        "texture-min-filter-mode"
+      );
+      const magFilterModeSelect = document.getElementById(
+        "texture-mag-filter-mode"
+      );
+
+      const backgroundSizeModeInput =
+        document.getElementById(
+          "texture-background-size-mode"
+        );
+
+      // Get a refernce to our <input type="range" /> widget and listen to change events
+      const textureScaleInput =
+        document.getElementById("texture-scale");
+
+      textureScaleInput.addEventListener(
+        "change",
+        onTextureScaleInput
+      );
+
+      backgroundSizeModeInput.addEventListener(
+        "change",
+        onTextureBackgroundSizeModeChange
+      );
+
+      function onTextureBackgroundSizeModeChange(event) {
+        console.log(event.target.checked);
+        backgroundSizeModeCover = event.target.checked;
+      }
+      // Assign change event listeners to our <select /> elements
+
+      minFilterModeSelect.addEventListener(
+        "change",
+        onMinFilterModeSelect
+      );
+
+      function onTextureScaleInput(event) {
+        textureScaleFactor = parseFloat(event.target.value);
+      }
+
+      function onMinFilterModeSelect(event) {
+        textureMinFilter = event.target.value;
+      }
+
+      function onMagFilterModeSelect(event) {
+        textureMagFilter = event.target.value;
+      }
+
       requestAnimationFrame(renderFrame);
 
+      // * rendering loop
       function renderFrame() {
         requestAnimationFrame(renderFrame);
 
@@ -84,6 +382,213 @@
         gl.clearColor(0.1, 0.1, 0.1, 1);
 
         gl.clear(gl.COLOR_BUFFER_BIT);
+        {
+          // * Bind WebGLBuffer (vertexBuffer) tp special WebGl bind point(gl.ARRAY_BUFFER)
+          gl.bindBuffer(gl.ARRAY_BUFFER, vertexBuffer); // * bind the reference to vertexBuffer
+
+          // * supply position float 32 bit array  to WebGlBuffer( vertexBuffer)
+          gl.bufferData(
+            gl.ARRAY_BUFFER,
+            positions,
+            // * no change , static
+            gl.STATIC_DRAW
+          );
+
+          // * Explicitly enable this variable on GPU
+          gl.enableVertexAttribArray(
+            positionAttributeLocationOnGPU
+          );
+
+          // * instruct the GPU how to unpack our WebGlBuffer to our input attribute variable "position" in the vertex shader
+          gl.vertexAttribPointer(
+            positionAttributeLocationOnGPU,
+            2,
+            gl.FLOAT,
+            false,
+            0,
+            0
+          );
+        }
+
+        {
+          // * Bind WebGLBuffer (uvBuffer) tp special WebGl bind point(gl.ARRAY_BUFFER)
+          gl.bindBuffer(gl.ARRAY_BUFFER, uvBuffer); // * bind the reference to vertexBuffer
+
+          // * supply UVs float 32 bit array  to WebGlBuffer( vertexBuffer)
+          gl.bufferData(
+            gl.ARRAY_BUFFER,
+            uvs,
+            // * no change , static
+            gl.STATIC_DRAW
+          );
+
+          // * Explicitly enable this variable on GPU
+          gl.enableVertexAttribArray(
+            uvAttributeLocationOnGPU
+          );
+
+          // * instruct the GPU how to unpack our WebGlBuffer to our input attribute variable "uv" in the vertex shader
+          gl.vertexAttribPointer(
+            uvAttributeLocationOnGPU,
+            2,
+            gl.FLOAT,
+            false,
+            0,
+            0
+          );
+        }
+
+        {
+          // * Rasterizer special array to handle
+          //gl.ELEMENT_ARRAY_BUFFER
+          // Buffer used for element indices.
+
+          // * Bind WebGLBuffer (indexBuffer) tp special WebGl bind point(gl.ELEMENT_ARRAY_BUFFER)
+          gl.bindBuffer(
+            gl.ELEMENT_ARRAY_BUFFER,
+            indexBuffer
+          ); // * bind the reference to vertexBuffer
+
+          // * supply indices as unsigned intefer with 16bit precision
+          gl.bufferData(
+            gl.ELEMENT_ARRAY_BUFFER,
+            indices,
+            // * no change , static
+            gl.STATIC_DRAW
+          );
+        }
+        // * Explicitly use my webGlProgram that i am interested in drawing with
+        gl.useProgram(drawingProgram);
+
+        // Pass in texture unit to use as a uniform variable to our fragment shader
+        // * passing a integeter to the uniform
+        // * location on the GPU, active texture slot index
+        // * 这个uniform location的值是 texture slot 0的值 那个图片
+        // c++ 中指针的概念 地址表示那个值
+        gl.uniform1i(textureUniformLocationOnGPU, 0);
+
+        gl.uniform2f(
+          canvasSizeLocationGpu,
+          CANVAS_WIDTH,
+          CANVAS_HEIGHT
+        );
+
+        // Look up uniform variable location for texture scale factor in our WebGLProgram
+        gl.uniform1f(
+          textureScaleFactorLocationOnGPU,
+          textureScaleFactor
+        );
+
+        if (!video.paused) {
+          // * Active texture unit at index 0
+          gl.activeTexture(gl.TEXTURE0);
+          // * Bind  texture to active gl.TEXTURE_2D
+          gl.bindTexture(gl.TEXTURE_2D, texture); // * active  gl.TEXTURE0
+
+          // * flip y-axis
+          gl.pixelStorei(gl.UNPACK_FLIP_Y_WEBGL, 1);
+          // Set the x wrapping mode for our active gl.TEXTURE_2D (texture)
+          gl.texParameteri(
+            gl.TEXTURE_2D,
+            gl.TEXTURE_WRAP_S,
+            gl[textureWrapSMode]
+          );
+          // Set the y wrapping mode for our active gl.TEXTURE_2D (texture)
+          gl.texParameteri(
+            gl.TEXTURE_2D,
+            gl.TEXTURE_WRAP_T,
+            gl[textureWrapTMode]
+          );
+          // Set the min filter for our active gl.TEXTURE_2D
+          gl.texParameteri(
+            gl.TEXTURE_2D,
+            gl.TEXTURE_MIN_FILTER,
+            gl[textureMinFilter]
+          );
+          // Set the mag filter for our active gl.TEXTURE_2D
+          gl.texParameteri(
+            gl.TEXTURE_2D,
+            gl.TEXTURE_MAG_FILTER,
+            gl[textureMagFilter]
+          );
+
+          // Supply video dimensions to our videoSize shader input uniform variable
+          gl.uniform2f(
+            videoSizeLocationGpu,
+            video.videoWidth,
+            video.videoHeight
+          );
+
+          // Supply background size mode to our backgroundSizeMode shader input uniform variable
+          gl.uniform1i(
+            backgroundSizeModeLocationOnGPU,
+            backgroundSizeModeCover ? 1 : 0
+          );
+          // * supply the image to the newly created WebGLTEXTURE (texture)
+          gl.texImage2D(
+            gl.TEXTURE_2D,
+            0,
+            gl.RGB,
+            gl.RGB,
+            gl.UNSIGNED_BYTE,
+            // * every frame of the the video will be the texture
+            video
+          );
+        }
+        // * Issue a draw command using my active WebGlProgram
+        gl.drawElements(
+          gl.TRIANGLES,
+          indices.length,
+          // * this one byte type Uint16
+          gl.UNSIGNED_SHORT,
+          0
+        );
+      }
+
+      // * WebGl helper Methods
+      function createShader(type, source) {
+        // * return a webgl shader object
+        const shader = gl.createShader(type);
+        gl.shaderSource(shader, source);
+        gl.compileShader(shader);
+        // * check if compile succesfully
+        if (
+          gl.getShaderParameter(shader, gl.COMPILE_STATUS)
+        ) {
+          return shader;
+        }
+
+        console.error(`
+        Error when compiling shader on the GPU:  ${gl.getShaderInfoLog(
+          shader
+        )}`);
+
+        gl.deleteShader(shader);
+      }
+
+      function createProgram(
+        vertexShaderObject,
+        framentShaderObject
+      ) {
+        const program = gl.createProgram();
+        // * ordering matter
+        gl.attachShader(program, vertexShaderObject);
+        gl.attachShader(program, framentShaderObject);
+
+        gl.linkProgram(program);
+        if (
+          gl.getProgramParameter(program, gl.LINK_STATUS)
+        ) {
+          return program;
+        }
+
+        console.error(`
+        Error when compiling shader on the GPU:  ${gl.getProgramInfoLog(
+          program
+        )}
+        `);
+
+        gl.deleteProgram(program);
       }
     </script>
   </body>
