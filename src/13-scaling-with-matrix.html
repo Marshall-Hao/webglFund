@@ -52,7 +52,7 @@
     <script>
       const CANVAS_WIDTH = 512;
       const CANVAS_HEIGHT = 512;
-
+      /** @type {HTMLCanvasElement} */
       const canvas = document.getElementById("canvas");
       canvas.width = CANVAS_WIDTH * devicePixelRatio;
       canvas.height = CANVAS_HEIGHT * devicePixelRatio;
@@ -64,14 +64,125 @@
         "height",
         `${CANVAS_HEIGHT}px`
       );
-
+      /** @type {WebGLRenderingContext} */
       const gl =
         canvas.getContext("webgl") ||
         canvas.getContext("experimental-webgl");
 
+      // * check the device Precision
+      const shaderPrecisionLowP =
+        gl.getShaderPrecisionFormat(
+          gl.FRAGMENT_SHADER,
+          gl.LOW_FLOAT
+        );
+
+      const shaderPrecisionMediumP =
+        gl.getShaderPrecisionFormat(
+          gl.FRAGMENT_SHADER,
+          gl.MEDIUM_FLOAT
+        );
+
+      const shaderPrecisionHihgP =
+        gl.getShaderPrecisionFormat(
+          gl.FRAGMENT_SHADER,
+          gl.HIGH_FLOAT
+        );
+
+      const VERTEX_SHAER_SOURCE = `
+        uniform mat4 scaleMatrix;
+
+        attribute vec4 position;
+        attribute vec4 color;
+
+        varying vec4 v_color;
+
+        void main () {
+       
+          // in webgl is column * row
+          gl_Position = scaleMatrix * position ;
+          v_color = color;
+        }
+      `;
+
+      const FRAMENT_SHADER_SOURCE = `
+        precision highp float;
+
+        varying vec4 v_color;
+
+        void main () {
+          gl_FragColor = v_color;
+        }
+      `;
+      // * create and compile vertex & fragment shader to it on GPU
+      const vertexShaer = createShader(
+        gl.VERTEX_SHADER,
+        VERTEX_SHAER_SOURCE
+      );
+
+      const fragmentShader = createShader(
+        gl.FRAGMENT_SHADER,
+        FRAMENT_SHADER_SOURCE
+      );
+
+      // *  create a webGlProgram and link the vertex and fragment shaders to it on the GPU
+      const drawingProgram = createProgram(
+        vertexShaer,
+        fragmentShader
+      );
+
+      // * create an array holding the positions of our point to be rendered
+      const TRIANGLE_WIDTH = 1;
+      const TRIANGLE_HEIGHT = 0.75;
+
+      let positions = new Float32Array([
+        -TRIANGLE_WIDTH / 2,
+        -TRIANGLE_HEIGHT / 2,
+        TRIANGLE_WIDTH / 2,
+        -TRIANGLE_HEIGHT / 2,
+        0,
+        TRIANGLE_HEIGHT / 2,
+      ]);
+
+      // * create a WebGLBUffer that will hold our position to be supplied to the GPU(Vertex shader)
+      const vertexBuffer = gl.createBuffer();
+
+      // * create an array holidng the colors of our points to be rendered
+      let colors = new Float32Array([
+        1.0, 0.0, 0.0, 0, 1, 0, 0, 0, 1,
+      ]);
+
+      // *  create a WebGlBuffer that will hold our colors to be supplied to the GPU
+      const colorBuffer = gl.createBuffer();
+
+      // * look up "position" attribute variable location on our GPU
+      const positionAttributeLocationOnGPU =
+        gl.getAttribLocation(drawingProgram, "position"); // 0 no init value
+
+      // * look up "color" attribute variable location on our GPU
+      const colorAttributeLocationOnGPU =
+        gl.getAttribLocation(drawingProgram, "color"); // 0 no init value
+
+      // * look up "translationMatrix " uniform variable location on our GPU
+      // Before we can look up uniform variale locations on our GPU, we must explicitly use the appropriate WebGlProgram that we are intersted in
+      gl.useProgram(drawingProgram);
+
+      const scaleMatrix = new Float32Array([
+        1.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 0.0,
+        1.0, 0.0, 0.0, 0.0, 0.0, 1.0,
+      ]);
+      const scaleMatrixUniformLocationOnGPU =
+        gl.getUniformLocation(
+          drawingProgram,
+          "scaleMatrix"
+        );
+
       requestAnimationFrame(renderFrame);
 
-      function renderFrame() {
+      // * rendering loop
+      function renderFrame(timeElapsedSinceStart) {
+        // * elapsed time since start in second
+        timeElapsedSinceStart /= 1000;
+
         requestAnimationFrame(renderFrame);
 
         gl.viewport(
@@ -84,6 +195,131 @@
         gl.clearColor(0.1, 0.1, 0.1, 1);
 
         gl.clear(gl.COLOR_BUFFER_BIT);
+        {
+          // * Bind WebGLBuffer (vertexBuffer) tp special WebGl bind point(gl.ARRAY_BUFFER)
+          gl.bindBuffer(gl.ARRAY_BUFFER, vertexBuffer); // * bind the reference to vertexBuffer
+
+          // * supply position float 32 bit array  to WebGlBuffer( vertexBuffer)
+          gl.bufferData(
+            gl.ARRAY_BUFFER,
+            positions,
+            // * no change , static
+            // * since the vertices is static set
+            gl.STATIC_DRAW
+          );
+
+          // * Explicitly enable this variable on GPU
+          gl.enableVertexAttribArray(
+            positionAttributeLocationOnGPU
+          );
+
+          // * instruct the GPU how to unpack our WebGlBuffer to our input attribute variable "position" in the vertex shader
+          gl.vertexAttribPointer(
+            positionAttributeLocationOnGPU,
+            2,
+            gl.FLOAT,
+            false,
+            0,
+            0
+          );
+        }
+
+        {
+          // * Bind WebGLBuffer (colorBuffer) tp special WebGl bind point(gl.ARRAY_BUFFER)
+          gl.bindBuffer(gl.ARRAY_BUFFER, colorBuffer); // * bind the reference to vertexBuffer
+
+          // * supply colors float 32 bit array  to WebGlBuffer( vertexBuffer)
+          gl.bufferData(
+            gl.ARRAY_BUFFER,
+            colors,
+            // * no change , static
+            gl.STATIC_DRAW
+          );
+
+          // * Explicitly enable this variable on GPU
+          gl.enableVertexAttribArray(
+            colorAttributeLocationOnGPU
+          );
+
+          // * instruct the GPU how to unpack our WebGlBuffer to our input attribute variable "color" in the vertex shader
+          gl.vertexAttribPointer(
+            colorAttributeLocationOnGPU,
+            3,
+            gl.FLOAT,
+            false,
+            0,
+            0
+          );
+        }
+        // * Explicitly use my webGlProgram that i am interested in drawing with
+        gl.useProgram(drawingProgram);
+
+        // Apply translation to our mat4
+        const scaleRadius = 0.5;
+        scaleMatrix[0] =
+          Math.cos(timeElapsedSinceStart) * scaleRadius + 1;
+        scaleMatrix[5] =
+          Math.cos(timeElapsedSinceStart) * scaleRadius + 1;
+
+        // * pass the matrix to the GPU location
+        gl.uniformMatrix4fv(
+          scaleMatrixUniformLocationOnGPU,
+          false,
+          scaleMatrix
+        );
+
+        // * Issue a draw command using my active WebGlProgram
+        gl.drawArrays(
+          gl.TRIANGLES,
+          0,
+          positions.length / 2
+        );
+      }
+
+      // * WebGl helper Methods
+      function createShader(type, source) {
+        // * return a webgl shader object
+        const shader = gl.createShader(type);
+        gl.shaderSource(shader, source);
+        gl.compileShader(shader);
+        // * check if compile succesfully
+        if (
+          gl.getShaderParameter(shader, gl.COMPILE_STATUS)
+        ) {
+          return shader;
+        }
+
+        console.error(`
+        Error when compiling shader on the GPU:  ${gl.getShaderInfoLog(
+          shader
+        )}`);
+
+        gl.deleteShader(shader);
+      }
+
+      function createProgram(
+        vertexShaderObject,
+        framentShaderObject
+      ) {
+        const program = gl.createProgram();
+        // * ordering matter
+        gl.attachShader(program, vertexShaderObject);
+        gl.attachShader(program, framentShaderObject);
+
+        gl.linkProgram(program);
+        if (
+          gl.getProgramParameter(program, gl.LINK_STATUS)
+        ) {
+          return program;
+        }
+
+        console.error(`
+        Error when compiling shader on the GPU:  ${gl.getProgramInfoLog(
+          program
+        )}
+        `);
+
+        gl.deleteProgram(program);
       }
     </script>
   </body>
