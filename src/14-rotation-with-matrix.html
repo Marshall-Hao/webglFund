@@ -52,6 +52,7 @@
     <script>
       // * will do the calculation in the gpu
       // * avoid pass to much data to GPU for each frame
+      // * pass from cpu to gpu is an expensive operation
       const VERTEX_SHADER_SOURCE = `
         uniform mat4 translationMatrix;
         uniform mat4 scaleMatrix;
